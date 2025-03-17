@@ -76,6 +76,7 @@ type StreamConfig struct {
 	MirrorDirect            bool                              `toml:"mirror_direct"`
 	ConsumerLimits          jetstream.StreamConsumerLimits    `toml:"consumer_limits"`
 	Metadata                map[string]string                 `toml:"metadata"`
+	ExistingStream          bool                              `toml:"existing_stream"`
 	AsyncPublish            bool                              `toml:"async_publish"`
 	AsyncAckTimeout         string                            `toml:"async_ack_timeout"`
 	AsyncAckTimeoutDuration time.Duration
@@ -140,11 +141,19 @@ func (n *NATS) Connect() error {
 		if err != nil {
 			return fmt.Errorf("failed to connect to jetstream: %w", err)
 		}
-		_, err = n.jetstreamClient.CreateOrUpdateStream(context.Background(), *n.jetstreamStreamConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create or update stream: %w", err)
+		switch n.Jetstream.ExistingStream {
+		case true:
+			_, err = n.jetstreamClient.Stream(context.Background(), n.Jetstream.Name)
+			if err != nil {
+				return fmt.Errorf("failed to connect to stream: %w", err)
+			}
+		default:
+			_, err = n.jetstreamClient.CreateOrUpdateStream(context.Background(), *n.jetstreamStreamConfig)
+			if err != nil {
+				return fmt.Errorf("failed to create or update stream: %w", err)
+			}
 		}
-		n.Log.Infof("Stream (%s) successfully created or updated", n.Jetstream.Name)
+		n.Log.Infof("Successfully connected to stream (%s)", n.Jetstream.Name)
 	}
 	return nil
 }
