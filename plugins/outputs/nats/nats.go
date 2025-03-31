@@ -308,21 +308,40 @@ func (n *NATS) Write(metrics []telegraf.Metric) error {
 
 	if pafs != nil {
 		// Check Ack from async publish
-		select {
-		case <-n.jetstreamClient.PublishAsyncComplete():
-			for i := range pafs {
-				select {
-				case <-pafs[i].Ok():
-					continue
-				case err := <-pafs[i].Err():
-					return fmt.Errorf("publish acknowledgement is an error: %w (retrying)", err)
+		for _, paf := range pafs {
+			select {
+			case <-paf.Ok():
+				continue
+			case <-paf.Err():
+				err := retrySyncPublish(n, paf.Msg(), 3)
+				if err != nil {
+					return err
+				}
+			case <-time.After(n.Jetstream.AsyncAckTimeoutDuration):
+				n.Log.Infof("Timout: retrying")
+				err := retrySyncPublish(n, paf.Msg(), 3)
+				if err != nil {
+					n.Log.Infof("jetstream PubAsync ack timeout (pending=%d)", n.jetstreamClient.PublishAsyncPending())
+					return err
 				}
 			}
-		case <-time.After(n.Jetstream.AsyncAckTimeoutDuration):
-			return fmt.Errorf("jetstream PubAsync ack timeout (pending=%d)", n.jetstreamClient.PublishAsyncPending())
 		}
 	}
 	return nil
+}
+
+func retrySyncPublish(n *NATS, msg *nats.Msg, maxRetries int) error {
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		pubctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_, err := n.jetstreamClient.PublishMsg(pubctx, msg)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return fmt.Errorf("Final failure after %d attempts", maxRetries)
 }
 
 func init() {
