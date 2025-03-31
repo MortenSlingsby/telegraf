@@ -314,16 +314,23 @@ func (n *NATS) Write(metrics []telegraf.Metric) error {
 				continue
 			case <-paf.Err():
 				err := retrySyncPublish(n, paf.Msg(), 3)
+				n.Log.Infof("Error??")
 				if err != nil {
 					return err
 				}
 			case <-time.After(n.Jetstream.AsyncAckTimeoutDuration):
 				n.Log.Infof("Timout: retrying")
-				err := retrySyncPublish(n, paf.Msg(), 3)
-				if err != nil {
-					n.Log.Infof("jetstream PubAsync ack timeout (pending=%d)", n.jetstreamClient.PublishAsyncPending())
-					return err
-				}
+        select {
+        case <-paf.Ok():
+          n.Log.Infof("OK anyway")
+          continue
+        default:
+          err := retrySyncPublish(n, paf.Msg(), 3)
+          if err != nil {
+            n.Log.Infof("jetstream PubAsync ack timeout (pending=%d)", n.jetstreamClient.PublishAsyncPending())
+            return err
+          }
+        }
 			}
 		}
 	}
