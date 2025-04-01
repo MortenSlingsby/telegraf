@@ -79,6 +79,7 @@ type StreamConfig struct {
 	ExistingStream          bool                              `toml:"existing_stream"`
 	AsyncPublish            bool                              `toml:"async_publish"`
 	AsyncAckTimeout         string                            `toml:"async_ack_timeout"`
+	AsyncMaxAckPending      int                               `toml:"async_max_ack_pending"`
 	AsyncAckTimeoutDuration time.Duration
 }
 
@@ -137,7 +138,7 @@ func (n *NATS) Connect() error {
 	}
 
 	if n.Jetstream != nil {
-		n.jetstreamClient, err = jetstream.New(n.conn)
+		n.jetstreamClient, err = jetstream.New(n.conn, jetstream.WithPublishAsyncMaxPending(n.Jetstream.AsyncMaxAckPending))
 		if err != nil {
 			return fmt.Errorf("failed to connect to jetstream: %w", err)
 		}
