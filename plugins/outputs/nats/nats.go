@@ -317,6 +317,8 @@ func (n *NATS) Write(metrics []telegraf.Metric) error {
 					continue
 				case err := <-pafs[i].Err():
 					return fmt.Errorf("publish acknowledgement is an error: %w (retrying)", err)
+				case <-time.After(n.Jetstream.AsyncAckTimeoutDuration): // This will deadlock without this case here
+					return errors.New("Async publish complete, but futures did not return")
 				}
 			}
 		case <-time.After(n.Jetstream.AsyncAckTimeoutDuration):
