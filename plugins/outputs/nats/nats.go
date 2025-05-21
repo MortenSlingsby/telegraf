@@ -309,20 +309,15 @@ func (n *NATS) Write(metrics []telegraf.Metric) error {
 
 	if pafs != nil {
 		// Check Ack from async publish
-		select {
-		case <-n.jetstreamClient.PublishAsyncComplete():
-			for i := range pafs {
-				select {
-				case <-pafs[i].Ok():
-					continue
-				case err := <-pafs[i].Err():
-					return fmt.Errorf("publish acknowledgement is an error: %w (retrying)", err)
-				case <-time.After(n.Jetstream.AsyncAckTimeoutDuration): // This will deadlock without this case here
-					return errors.New("Async publish complete, but futures did not return")
-				}
+		for i := range pafs {
+			select {
+			case <-pafs[i].Ok():
+				continue
+			case err := <-pafs[i].Err():
+				return fmt.Errorf("publish acknowledgement is an error: %w (retrying)", err)
+			case <-time.After(n.Jetstream.AsyncAckTimeoutDuration):
+				return errors.New("Async publish complete, but futures did not return")
 			}
-		case <-time.After(n.Jetstream.AsyncAckTimeoutDuration):
-			return fmt.Errorf("jetstream PubAsync ack timeout (pending=%d)", n.jetstreamClient.PublishAsyncPending())
 		}
 	}
 	return nil
