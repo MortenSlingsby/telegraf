@@ -60,6 +60,15 @@ to use them.
   ## Use TLS but skip chain & host verification
   # insecure_skip_verify = false
 
+  ## Enable W3C Trace Context propagation via NATS message headers.
+  ## When enabled, each message will include a "traceparent" header with a
+  ## unique trace ID that can be used for distributed tracing across your pipeline.
+  # trace_propagation = false
+
+  ## OpenTelemetry OTLP gRPC endpoint for exporting producer spans.
+  ## Required when trace_propagation is enabled. Uses insecure (no TLS) connection.
+  # otel_endpoint = "localhost:4317"
+
   ## Data format to output.
   ## Each data format has its own unique set of configuration options, read
   ## more about them here:
@@ -72,6 +81,11 @@ to use them.
     ## Name of the stream, required when using jetstream. Telegraf will
     ## use the union of the above subject and below the subjects array.
     # name = ""
+
+    ## Use existing stream if you want to connect to an existing stream.
+    # existing_stream = false
+
+    ## If existing_stream i set to true subjects is unused
     # subjects = []
 
     ## Use asynchronous publishing for higher throughput, but note that it does not guarantee order within batches.
@@ -81,7 +95,11 @@ to use them.
     ## String with valid units "ns", "us" (or "µs"), "ms", "s", "m", "h".
     # async_ack_timeout = "5s"
 
+    ## Maximum amount of outstanding ack pending
+    # async_max_ack_pending = 1000
+
     ## Full jetstream create stream config, refer: https://docs.nats.io/nats-concepts/jetstream/streams
+    ## If existing_stream is set to true, these parameters are unused
     # retention = "limits"
     # max_consumers = -1
     # max_msgs_per_subject = -1
