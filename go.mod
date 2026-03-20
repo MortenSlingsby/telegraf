@@ -212,7 +212,7 @@ require (
 	go.opentelemetry.io/collector/pdata v1.25.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v0.44.0
 	go.opentelemetry.io/otel/sdk/metric v1.32.0
-	go.opentelemetry.io/proto/otlp v1.3.1
+	go.opentelemetry.io/proto/otlp v1.5.0
 	go.starlark.net v0.0.0-20241226192728-8dfa5b98479f
 	go.step.sm/crypto v0.54.0
 	golang.org/x/crypto v0.33.0
@@ -226,7 +226,7 @@ require (
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20211230205640-daad0b7ba671
 	gonum.org/v1/gonum v0.15.1
 	google.golang.org/api v0.219.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576
+	google.golang.org/genproto/googleapis/api v0.0.0-20250115164207-1a7da9e5054f
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.4
 	gopkg.in/gorethink/gorethink.v3 v3.0.5
@@ -238,6 +238,11 @@ require (
 	k8s.io/client-go v0.32.1
 	layeh.com/radius v0.0.0-20221205141417-e7fbddd11d68
 	modernc.org/sqlite v1.34.1
+)
+
+require (
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.34.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.34.0 // indirect
 )
 
 require (
@@ -367,7 +372,7 @@ require (
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc // indirect
 	github.com/grid-x/serial v0.0.0-20211107191517-583c7356b3aa // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.25.1 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect

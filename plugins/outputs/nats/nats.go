@@ -11,6 +11,11 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
@@ -23,14 +28,16 @@ import (
 var sampleConfig string
 
 type NATS struct {
-	Servers     []string      `toml:"servers"`
-	Secure      bool          `toml:"secure"`
-	Name        string        `toml:"name"`
-	Username    config.Secret `toml:"username"`
-	Password    config.Secret `toml:"password"`
-	Credentials string        `toml:"credentials"`
-	Subject     string        `toml:"subject"`
-	Jetstream   *StreamConfig `toml:"jetstream"`
+	Servers        []string      `toml:"servers"`
+	Secure         bool          `toml:"secure"`
+	Name           string        `toml:"name"`
+	Username       config.Secret `toml:"username"`
+	Password       config.Secret `toml:"password"`
+	Credentials    string        `toml:"credentials"`
+	Subject        string        `toml:"subject"`
+	Jetstream      *StreamConfig `toml:"jetstream"`
+	TracePropagation bool   `toml:"trace_propagation"`
+	OtelEndpoint     string `toml:"otel_endpoint"`
 	tls.ClientConfig
 
 	Log telegraf.Logger `toml:"-"`
@@ -39,6 +46,7 @@ type NATS struct {
 	jetstreamClient       jetstream.JetStream
 	jetstreamStreamConfig *jetstream.StreamConfig
 	serializer            telegraf.Serializer
+	tracerProvider        *sdktrace.TracerProvider
 }
 
 // StreamConfig is the configuration for creating stream
@@ -269,12 +277,66 @@ func (n *NATS) Init() error {
 			return fmt.Errorf("failed to parse jetstream config: %w", err)
 		}
 	}
+
+	if n.TracePropagation {
+		if n.OtelEndpoint == "" {
+			return errors.New("otel_endpoint must be set when trace_propagation is enabled")
+		}
+		traceExp, err := otlptracegrpc.New(
+			context.Background(),
+			otlptracegrpc.WithEndpoint(n.OtelEndpoint),
+			otlptracegrpc.WithInsecure(),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create OTLP trace exporter: %w", err)
+		}
+		n.tracerProvider = sdktrace.NewTracerProvider(sdktrace.WithBatcher(traceExp))
+		otel.SetTracerProvider(n.tracerProvider)
+		otel.SetTextMapPropagator(propagation.TraceContext{})
+	}
+
 	return nil
 }
 
 func (n *NATS) Close() error {
+	if n.tracerProvider != nil {
+		if err := n.tracerProvider.Shutdown(context.Background()); err != nil {
+			n.Log.Warnf("Failed to shutdown tracer provider: %v", err)
+		}
+	}
 	n.conn.Close()
 	return nil
+}
+
+// natsHeaderCarrier adapts nats.Header to satisfy the propagation.TextMapCarrier interface.
+type natsHeaderCarrier nats.Header
+
+func (c natsHeaderCarrier) Get(key string) string {
+	return nats.Header(c).Get(key)
+}
+
+func (c natsHeaderCarrier) Set(key, value string) {
+	nats.Header(c).Set(key, value)
+}
+
+func (c natsHeaderCarrier) Keys() []string {
+	keys := make([]string, 0, len(c))
+	for k := range c {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// newTraceparentMsg creates a nats.Msg with a W3C traceparent header injected
+// from the given context.
+func newTraceparentMsg(ctx context.Context, subject string, data []byte) *nats.Msg {
+	msg := &nats.Msg{
+		Subject: subject,
+		Data:    data,
+		Header:  nats.Header{},
+	}
+	otel.GetTextMapPropagator().Inject(ctx, natsHeaderCarrier(msg.Header))
+	return msg
 }
 
 func (n *NATS) Write(metrics []telegraf.Metric) error {
@@ -293,14 +355,30 @@ func (n *NATS) Write(metrics []telegraf.Metric) error {
 			n.Log.Debugf("Could not serialize metric: %v", err)
 			continue
 		}
-		if n.Jetstream != nil {
-			if n.Jetstream.AsyncPublish {
-				pafs[i], err = n.jetstreamClient.PublishAsync(n.Subject, buf, jetstream.WithExpectStream(n.Jetstream.Name))
+		if n.TracePropagation {
+			tracer := otel.Tracer("telegraf/outputs/nats")
+			ctx, span := tracer.Start(context.Background(), n.Subject, trace.WithSpanKind(trace.SpanKindProducer))
+			msg := newTraceparentMsg(ctx, n.Subject, buf)
+			if n.Jetstream != nil {
+				if n.Jetstream.AsyncPublish {
+					pafs[i], err = n.jetstreamClient.PublishMsgAsync(msg, jetstream.WithExpectStream(n.Jetstream.Name))
+				} else {
+					_, err = n.jetstreamClient.PublishMsg(ctx, msg, jetstream.WithExpectStream(n.Jetstream.Name))
+				}
 			} else {
-				_, err = n.jetstreamClient.Publish(context.Background(), n.Subject, buf, jetstream.WithExpectStream(n.Jetstream.Name))
+				err = n.conn.PublishMsg(msg)
 			}
+			span.End()
 		} else {
-			err = n.conn.Publish(n.Subject, buf)
+			if n.Jetstream != nil {
+				if n.Jetstream.AsyncPublish {
+					pafs[i], err = n.jetstreamClient.PublishAsync(n.Subject, buf, jetstream.WithExpectStream(n.Jetstream.Name))
+				} else {
+					_, err = n.jetstreamClient.Publish(context.Background(), n.Subject, buf, jetstream.WithExpectStream(n.Jetstream.Name))
+				}
+			} else {
+				err = n.conn.Publish(n.Subject, buf)
+			}
 		}
 		if err != nil {
 			return fmt.Errorf("failed to send NATS message: %w", err)
